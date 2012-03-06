@@ -239,11 +239,35 @@ var SDPToJingle = (function() {
 				}
 			};
 		},
-		_parseDescriptionStanza = function(stanza) {
-			
+		_parseStanza = function(description, stanza) {
+			var child;
+			for(var i = 0, len = stanza.childNodes.length; i < len; i++) {
+				if (stanza.childNodes.hasOwnProperty(i)) {
+					child = stanza.childNodes[i];
+					switch(child.tagName) {
+						case 'payload-type':
+							description.rtpmap.push(_unserializeAttributes(child));
+							break;
+						case 'encryption':
+							description.crypto.push(_unserializeAttributes(child.childNodes[0]));
+							break;
+						case 'candidate':
+							description.candidates.push(_unserializeAttributes(child));
+							break;
+					}
+				}
+			}
 		},
-		_parseTransportStanza = function(stanza) {
-			
+		_unserializeAttributes = function(element) {
+			var res = {},
+				attr;
+			for(var i = 0, len = element.attributes.length; i < len; i++) {
+				if(element.attributes.hasOwnProperty(i)) {
+					attr = element.attributes[i]; 
+					res[attr.name] = attr.value;
+				}
+			}
+			return res;
 		};
 	
 	return {
@@ -266,15 +290,18 @@ var SDPToJingle = (function() {
 			var doc = _getXmlDoc(stanza),
 				content = doc.childNodes[0],
 				child,
+				media = null,
 				description = _generateEmptyDescription();
 			for(var i = 0; i < content.childNodes.length; i++) {
 				child = content.childNodes[i];
 				switch(child.tagName) {
 					case 'description':
-						_parseDescriptionStanza(child);
-						break;
+						media = child.getAttribute('media');
+						description[media].profile = child.getAttribute('profile');
+						description[media].ssrc = child.getAttribute('ssrc');
+						// fall through, parseStanza needs to be done for both tags
 					case 'transport':
-						_parseTransportStanza(child);
+						_parseStanza(description[media], child);
 						break;
 				}
 			}
@@ -285,5 +312,5 @@ var SDPToJingle = (function() {
 new window.webkitPeerConnection("STUN stun.l.google.com:19302", function(msg) {
 	var jingle = SDPToJingle.createJingleStanza(msg);
 	console.log(jingle);
-	console.log(SDPToJingle.parseJingleStanza(jingle.video));
+	console.log(SDPToJingle.parseJingleStanza(jingle));
 })
