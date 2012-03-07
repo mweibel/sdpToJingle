@@ -1,6 +1,14 @@
 <html>
 	<head>
 		<script type="text/javascript" src="sdptojingle.js"></script>
+		<script type="text/javascript">
+			new window.webkitPeerConnection("STUN stun.l.google.com:19302", function(msg) {
+				var jingle = SDPToJingle.createJingleStanza(msg);
+				console.log(jingle);
+				var jinglestanza = '<jingle>' + jingle.audio + jingle.video + '</jingle>';
+				console.log(SDPToJingle.parseJingleStanza(jinglestanza));
+			});
+		</script>
 	</head>
 	<body>
 	</body>

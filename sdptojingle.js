@@ -379,10 +379,3 @@ var SDPToJingle = (function() {
 		}
 	};
 }());
-
-new window.webkitPeerConnection("STUN stun.l.google.com:19302", function(msg) {
-	var jingle = SDPToJingle.createJingleStanza(msg);
-	console.log(jingle);
-	var jinglestanza = '<jingle>' + jingle.audio + jingle.video + '</jingle>';
-	console.log(SDPToJingle.parseJingleStanza(jinglestanza));
-})
