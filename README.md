@@ -1,11 +1,10 @@
 SDP To Jingle
 =============
 
-Converts a PeerConnection SDP Message to Jingle and vice-versa (not done yet).
+Converts a PeerConnection SDP Message to Jingle and vice-versa.
 
 Feel free to contribute.
 
 License
 -------
-MIT
-
+See LICENSE.md
