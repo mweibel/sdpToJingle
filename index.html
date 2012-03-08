@@ -3,6 +3,7 @@
 		<script type="text/javascript" src="sdptojingle.js"></script>
 		<script type="text/javascript">
 			new window.webkitPeerConnection("STUN stun.l.google.com:19302", function(msg) {
+				console.log(msg);
 				var jingle = SDPToJingle.createJingleStanza(msg);
 				console.log(jingle);
 				var jinglestanza = '<jingle>' + jingle.audio + jingle.video + '</jingle>';

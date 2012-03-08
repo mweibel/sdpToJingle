@@ -69,7 +69,7 @@ var SDPToJingle = (function() {
 			}
 		},
 		// TODO: Remove hardcoding. This is copied from libjingle webrtcsdp.cc
-		HARDCODED_SDP = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=\r\nc=IN IP4 0.0.0.0\r\nt=0 0",
+		HARDCODED_SDP = "v=0\\r\\no=- 0 0 IN IP4 127.0.0.1\\r\\ns=\\r\\nc=IN IP4 0.0.0.0\\r\\nt=0 0",
 		
 		_parseMessageInJSON = function(msg) {
 			// Strip SDP-prefix and parse it as JSON
@@ -121,7 +121,8 @@ var SDPToJingle = (function() {
 					_parseRtpMap(attrs.rtpmap, key, params);
 					break;
 				case ATTRIBUTES.SSRC:
-					_parseSsrc(attrs.ssrc, key, params);
+					// ssrc is only a string, but split ssrc: first
+					attrs.ssrc = params.join(" ").substring(5);
 					break;
 			}
 			
@@ -158,9 +159,6 @@ var SDPToJingle = (function() {
 				'name': nameAndRate[0],
 				'clockrate': nameAndRate[1]
 			});
-		},
-		_parseSsrc = function(ssrc, key, params) {
-			ssrc = params.join(" ");
 		},
 		_generateJingleFromDescription = function(description) {
 			return {
@@ -227,14 +225,14 @@ var SDPToJingle = (function() {
 		},
 		_generateEmptyDescription = function() {
 			return {
-				"video": {
+				"audio": {
 					candidates: [],
 					crypto: [],
 					rtpmap: [],
 					ssrc: "",
 					profile: ""
 				},
-				"audio": {
+				"video": {
 					candidates: [],
 					crypto: [],
 					rtpmap: [],
@@ -253,7 +251,9 @@ var SDPToJingle = (function() {
 							description.rtpmap.push(_unserializeAttributes(child));
 							break;
 						case 'encryption':
-							description.crypto.push(_unserializeAttributes(child.childNodes[0]));
+							for(var c = 0, clen = child.childNodes.length; c < clen; c++) {
+								description.crypto.push(_unserializeAttributes(child.childNodes[c]));
+							}
 							break;
 						case 'candidate':
 							description.candidates.push(_unserializeAttributes(child));
@@ -280,12 +280,12 @@ var SDPToJingle = (function() {
 					sdp += _generateMediaSdp(media, description[media]);
 				}
 			}
-			return sdp;
+			return sdp + "\\r\\n";
 		},
 		_generateMediaSdp = function(media, description) {
 			// TODO: Remove hardcoded values like "1" which is the mediaport placeholder
-			var m = "\r\nm=" + media + " 1 " + description.profile,
-				rtpmapStr = "a=mid:" + media + "\r\na=rtcp-mux",
+			var m = "\\r\\nm=" + media + " 1 " + description.profile,
+				rtpmapStr = "a=mid:" + media + "\\r\\na=rtcp-mux",
 				cryptoStr = "",
 				candidateStr = "",
 				ssrcStr = "";
@@ -312,27 +312,27 @@ var SDPToJingle = (function() {
 						candidate.generation
 					];
 				candidateStr += "a=candidate:" + candidate.foundation 
-					+ " " + attrs.join(" ") + "\r\n";
+					+ " " + attrs.join(" ") + "\\r\\n";
 			}
 			for (var i = 0, len = description.crypto.length; i < len; i++) {
 				var crypto = description.crypto[i];
-				cryptoStr += "\r\na=crypto:" + crypto.tag + " " + crypto['crypto-suite'] +
-					" " + crypto['key-params'];
-				if(crypto['session-params']) {
-					cryptoStr += " " + crypto['session-params'];
+				cryptoStr += "\\r\\na=crypto:" + crypto.tag + " " + crypto['crypto-suite'] +
+					" " + crypto['key-params'] + " ";
+				if(crypto['session-params'].length) {
+					cryptoStr += crypto['session-params'];
 				}
 			}
 			rtpmapStr += cryptoStr;
 			for (var i = 0, len = description.rtpmap.length; i < len; i++) {
 				var type = description.rtpmap[i];
 				m += " " + type.id;
-				rtpmapStr += "\r\na=rtpmap:" + type.id + " " + type.name + "/" + type.clockrate;
+				rtpmapStr += "\\r\\na=rtpmap:" + type.id + " " + type.name + "/" + type.clockrate;
 			}
 			if(description.ssrc) {
-				ssrcStr += "\r\n" + description.ssrc;
+				ssrcStr += "a=ssrc:" + description.ssrc;
 			}
 
-			return m + "\r\n" + candidateStr + rtpmapStr + ssrcStr;
+			return m + "\\r\\n" + candidateStr + rtpmapStr + "\\r\\n" + ssrcStr;
 		};
 	
 	return {
