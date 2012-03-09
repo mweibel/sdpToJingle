@@ -356,9 +356,11 @@ var SDPToJingle = (function() {
 				children = doc.childNodes[0].childNodes,
 				child,
 				media = null,
-				description = _generateEmptyDescription();
+				description = _generateEmptyDescription(),
+				hasSdpMessage = false;
 			for(var y = 0, len = children.length; y < len; y++) {
 				if (children[y].tagName === 'content') {
+					hasSdpMessage = true;
 					var content = children[y];
 					for(var i = 0, len = content.childNodes.length; i < len; i++) {
 						child = content.childNodes[i];
@@ -374,6 +376,10 @@ var SDPToJingle = (function() {
 						}
 					}
 				}
+			}
+			console.log(hasSdpMessage);
+			if (!hasSdpMessage) {
+				return null;
 			}
 			return _generateSdpFromDescription(description);
 		}
