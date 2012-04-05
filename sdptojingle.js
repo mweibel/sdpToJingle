@@ -70,7 +70,7 @@ var SDPToJingle = (function() {
 		},
 		// TODO: Remove hardcoding. This is copied from libjingle webrtcsdp.cc
 		HARDCODED_SDP = "v=0\\r\\no=- 0 0 IN IP4 127.0.0.1\\r\\ns=\\r\\nc=IN IP4 0.0.0.0\\r\\nt=0 0",
-		
+
 		_parseMessageInJSON = function(msg) {
 			// Strip SDP-prefix and parse it as JSON
 			return JSON.parse(msg.substring(SDP_PREFIX_LEN));
@@ -90,7 +90,7 @@ var SDPToJingle = (function() {
 		},
 		_parseLine = function(description, state, line) {
 			var keyAndParams = _splitLine(line);
-			
+
 			switch(keyAndParams.key) {
 				case LINE_PREFIXES.ATTRIBUTES:
 					_parseAttributes(description[state], keyAndParams.params);
@@ -122,10 +122,10 @@ var SDPToJingle = (function() {
 					break;
 				case ATTRIBUTES.SSRC:
 					// ssrc is only a string, but split ssrc: first
-					attrs.ssrc = params.join(" ").substring(5);
+					_parseSsrc(attrs.ssrc, key, params);
 					break;
 			}
-			
+
 			return attrs;
 		},
 		_parseCandidates = function(candidates, key, params) {
@@ -160,6 +160,13 @@ var SDPToJingle = (function() {
 				'clockrate': nameAndRate[1]
 			});
 		},
+		_parseSsrc = function(ssrc, key, params) {
+			var nameValue = params[1].split(KEY_DELIMITER);
+			if (ssrc[key[1]] === undefined) {
+				ssrc[key[1]] = {};
+			}
+			ssrc[key[1]][nameValue[0]] = nameValue[1];
+		},
 		_generateJingleFromDescription = function(description) {
 			return {
 				video: _generateMediaContent("video", description.video),
@@ -169,29 +176,40 @@ var SDPToJingle = (function() {
 		_generateMediaContent = function(name, media) {
 			var str = "<content content='initiator' name='" + name + "'>",
 				i = 0, len = 0;
-			
-			str += "<description xmlns='" + XMLNS.DESCRIPTION[name] + 
+
+			str += "<description xmlns='" + XMLNS.DESCRIPTION[name] +
 				"' profile='" + media.profile + "' media='" + name + "'";
-			if (media.ssrc.length) {
-				str += " ssrc='" + media.ssrc + "'";
-			}
 			str += '>';
 			str += _serializeProperties('payload-type', media.rtpmap);
-			
+
 			if (media.crypto.length) {
 				str += "<encryption required='1'>";
 				str += _serializeProperties('crypto', media['crypto']);
 				str += "</encryption>";
 			}
-			
+
+			str += '<streams>';
+			for (var streamId in media.ssrc) {
+				if (media.ssrc.hasOwnProperty(streamId)) {
+					var stream = media.ssrc[streamId];
+					str += '<stream';
+					for (var attr in stream) {
+						str += " " + attr + "='" + stream[attr] + "'";
+					}
+					str += '>';
+					str += '<ssrc>' + streamId + '</ssrc></stream>';
+				}
+			}
+			str += '</streams>';
+
 			str += "</description>";
-			
+
 			str += "<transport xmlns='" + XMLNS.TRANSPORT.ICE_UDP + "'";
-			str += media.candidates.length ? '>' : '/>'; 
+			str += media.candidates.length ? '>' : '/>';
 			if (media.candidates.length) {
 				str += _serializeProperties('candidate', media.candidates);
 			}
-			str += media.candidates.length ? '</transport>' : ''; 
+			str += media.candidates.length ? '</transport>' : '';
 
 			str += "</content>";
 			return str;
@@ -212,14 +230,18 @@ var SDPToJingle = (function() {
 		},
 		_getXmlDoc = function(text) {
 			var parser;
-			if (window.DOMParser) {
+			if (typeof window !== 'undefined' && window.DOMParser) {
 				parser = new DOMParser();
 				return parser.parseFromString(text,"text/xml");
-			} else if(window.ActiveXObject) { // Internet Explorer
+			} else if(typeof window !== 'undefined' && window.ActiveXObject) { // Internet Explorer
 				parser = new ActiveXObject("Microsoft.XMLDOM");
 				parser.async = false;
 				parser.loadXML(text);
 				return parser;
+			} else if (typeof require === 'function') { // node.js
+				var DOMParser = require('xmldom').DOMParser;
+				parser = new DOMParser();
+				return parser.parseFromString(text,"text/xml");
 			}
 			throw "Not implemented";
 		},
@@ -229,14 +251,14 @@ var SDPToJingle = (function() {
 					candidates: [],
 					crypto: [],
 					rtpmap: [],
-					ssrc: "",
+					ssrc: {},
 					profile: ""
 				},
 				"video": {
 					candidates: [],
 					crypto: [],
 					rtpmap: [],
-					ssrc: "",
+					ssrc: {},
 					profile: ""
 				}
 			};
@@ -258,6 +280,13 @@ var SDPToJingle = (function() {
 						case 'candidate':
 							description.candidates.push(_unserializeAttributes(child));
 							break;
+						case 'streams':
+							for(var c = 0, clen = child.childNodes.length; c < clen; c++) {
+								var stream = child.childNodes[c],
+									attrs = _unserializeAttributes(stream),
+									ssrc = stream.childNodes[0];
+								description.ssrc[ssrc.firstChild.nodeValue] = attrs;
+							}
 					}
 				}
 			}
@@ -267,7 +296,7 @@ var SDPToJingle = (function() {
 				attr;
 			for(var i = 0, len = element.attributes.length; i < len; i++) {
 				if(element.attributes.hasOwnProperty(i)) {
-					attr = element.attributes[i]; 
+					attr = element.attributes[i];
 					res[attr.name] = attr.value;
 				}
 			}
@@ -292,8 +321,8 @@ var SDPToJingle = (function() {
 			for (var i = 0, len = description.candidates.length; i < len; i++) {
 				var candidate = description.candidates[i],
 					attrs = [
-						candidate.component, 
-						candidate.protocol, 
+						candidate.component,
+						candidate.protocol,
 						candidate.priority,
 						candidate.ip,
 						candidate.port,
@@ -311,7 +340,7 @@ var SDPToJingle = (function() {
 						"generation",
 						candidate.generation
 					];
-				candidateStr += "a=candidate:" + candidate.foundation 
+				candidateStr += "a=candidate:" + candidate.foundation
 					+ " " + attrs.join(" ") + "\\r\\n";
 			}
 			for (var i = 0, len = description.crypto.length; i < len; i++) {
@@ -328,24 +357,31 @@ var SDPToJingle = (function() {
 				m += " " + type.id;
 				rtpmapStr += "\\r\\na=rtpmap:" + type.id + " " + type.name + "/" + type.clockrate;
 			}
-			if(description.ssrc) {
-				ssrcStr += "a=ssrc:" + description.ssrc;
+			for (var key in description.ssrc) {
+				if (description.ssrc.hasOwnProperty(key)) {
+					var ssrc = description.ssrc[key];
+					for (var subkey in ssrc) {
+						ssrcStr += "\\r\\na=ssrc:" + key;
+						if (ssrc.hasOwnProperty(subkey)) {
+							ssrcStr += " " + subkey + ":" + ssrc[subkey];
+						}
+					}
+				}
 			}
 
-			return m + "\\r\\n" + candidateStr + rtpmapStr + "\\r\\n" + ssrcStr;
+			return m + "\\r\\n" + candidateStr + rtpmapStr + ssrcStr;
 		};
-	
+
 	return {
 		createJingleStanza: function(sdpMsg) {
 			sdpMsg = _parseMessageInJSON(sdpMsg);
-			
+
 			var description = _generateEmptyDescription(),
 				state = null,
 				sdp = _splitSdpMessage(sdpMsg.sdp),
 				sessionId = sdpMsg.offererSessionId,
 				seq = sdpMsg.seq,
 				tieBreaker = sdpMsg.tieBreaker;
-			
 			for(var i = 0, len = sdp.length; i < len; i++) {
 				state = _parseLine(description, state, sdp[i]);
 			}
@@ -368,7 +404,6 @@ var SDPToJingle = (function() {
 							case 'description':
 								media = child.getAttribute('media');
 								description[media].profile = child.getAttribute('profile');
-								description[media].ssrc = child.getAttribute('ssrc');
 								// fall through, parseStanza needs to be done for both tags
 							case 'transport':
 								_parseStanza(description[media], child);
@@ -377,7 +412,6 @@ var SDPToJingle = (function() {
 					}
 				}
 			}
-			console.log(hasSdpMessage);
 			if (!hasSdpMessage) {
 				return null;
 			}
@@ -385,3 +419,8 @@ var SDPToJingle = (function() {
 		}
 	};
 }());
+
+// for node.js
+if (module !== undefined && module.exports !== undefined) {
+	module.exports = SDPToJingle;
+}
