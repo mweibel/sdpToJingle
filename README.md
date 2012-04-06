@@ -7,7 +7,7 @@ Feel free to contribute.
 
 Unit Test
 ---------
-The unit test is currently failing due to some things I can't parse (or I don't know how to send it) to jingle.
+The unit test is currently failing due to some things I can't parse (or I don't know how to parse it for now) to jingle.
 Requirements for running are:
   - node.js
   - mocha (installable via npm)
