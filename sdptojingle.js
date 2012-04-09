@@ -174,7 +174,7 @@ var SDPToJingle = (function() {
 			};
 		},
 		_generateMediaContent = function(name, media) {
-			var str = "<content content='initiator' name='" + name + "'>",
+			var str = "<content creator='initiator' name='" + name + "'>",
 				i = 0, len = 0;
 
 			str += "<description xmlns='" + XMLNS.DESCRIPTION[name] +
