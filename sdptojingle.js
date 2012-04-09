@@ -60,12 +60,12 @@ var SDPToJingle = (function() {
 		SDP_PREFIX_LEN = 3,
 		XMLNS = {
 			DESCRIPTION: {
-				"video": "urn:xmpp:tmp:jingle:apps:video-rtp",
-				"audio": "urn:xmpp:tmp:jingle:apps:rtp:1",
+				"video": "urn:xmpp:jingle:apps:video-rtp",
+				"audio": "urn:xmpp:jingle:apps:rtp:1",
 			},
 			TRANSPORT: {
-				ICE_UDP: "urn:xmpp:tmp:jingle:transports:ice-udp:1",
-				RAW_UDP: "urn:xmpp:tmp:jingle:transports:raw-udp:1",
+				ICE_UDP: "urn:xmpp:jingle:transports:ice-udp:1",
+				RAW_UDP: "urn:xmpp:jingle:transports:raw-udp:1",
 			}
 		},
 		// TODO: Remove hardcoding. This is copied from libjingle webrtcsdp.cc
