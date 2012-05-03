@@ -33,7 +33,7 @@ var SDPToJingle = (function() {
 			MID: "mid",
 			MID_AUDIO: "mid:audio",
 			MID_VIDEO: "mid:audio",
-			RTCP_MUX: "rtcp-muc",
+			RTCP_MUX: "rtcp-mux",
 			SSRC: "ssrc",
 			CNAME: "cname",
 			MSLABEL: "mslabel",
@@ -375,6 +375,9 @@ var SDPToJingle = (function() {
 	return {
 		createJingleStanza: function(sdpMsg) {
 			sdpMsg = _parseMessageInJSON(sdpMsg);
+			if (!sdpMsg.sdp) {
+				throw "Error: Invalid SDP message given";
+			}
 
 			var description = _generateEmptyDescription(),
 				state = null,
@@ -389,11 +392,16 @@ var SDPToJingle = (function() {
 		},
 		parseJingleStanza: function(stanza) {
 			var doc = _getXmlDoc(stanza),
-				children = doc.childNodes[0].childNodes,
+				children = doc.childNodes.length && doc.childNodes[0].childNodes,
 				child,
 				media = null,
 				description = _generateEmptyDescription(),
 				hasSdpMessage = false;
+				
+			if (!children) {
+				throw "Error: Invalid Stanza given";
+			}
+			
 			for(var y = 0, len = children.length; y < len; y++) {
 				if (children[y].tagName === 'content') {
 					hasSdpMessage = true;
@@ -421,6 +429,8 @@ var SDPToJingle = (function() {
 }());
 
 // for node.js
-if (module !== undefined && module.exports !== undefined) {
-	module.exports = SDPToJingle;
-}
+try {
+	if (module !== undefined && module.exports !== undefined) {
+		module.exports = SDPToJingle;
+	}
+} catch(e) {}
