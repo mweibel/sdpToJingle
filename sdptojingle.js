@@ -60,12 +60,12 @@ var SDPToJingle = (function() {
 		SDP_PREFIX_LEN = 3,
 		XMLNS = {
 			DESCRIPTION: {
-				"video": "urn:xmpp:tmp:jingle:apps:video-rtp",
-				"audio": "urn:xmpp:tmp:jingle:apps:rtp:1",
+				"video": "urn:xmpp:jingle:apps:video-rtp",
+				"audio": "urn:xmpp:jingle:apps:rtp:1",
 			},
 			TRANSPORT: {
-				ICE_UDP: "urn:xmpp:tmp:jingle:transports:ice-udp:1",
-				RAW_UDP: "urn:xmpp:tmp:jingle:transports:raw-udp:1",
+				ICE_UDP: "urn:xmpp:jingle:transports:ice-udp:1",
+				RAW_UDP: "urn:xmpp:jingle:transports:raw-udp:1",
 			}
 		},
 		// TODO: Remove hardcoding. This is copied from libjingle webrtcsdp.cc
@@ -174,7 +174,7 @@ var SDPToJingle = (function() {
 			};
 		},
 		_generateMediaContent = function(name, media) {
-			var str = "<content content='initiator' name='" + name + "'>",
+			var str = "<content creator='initiator' name='" + name + "'>",
 				i = 0, len = 0;
 
 			str += "<description xmlns='" + XMLNS.DESCRIPTION[name] +
