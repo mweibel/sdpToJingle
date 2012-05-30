@@ -101,6 +101,8 @@ var SDPToJingle = (function() {
 					state = _parseStateFromMedia(keyAndParams.params);
 					_parseMedia(description[state], keyAndParams.params);
 					break;
+				case LINE_PREFIXES.SESSION_CONNECTION:
+					_parseSessionConnection(description[state], keyAndParams.params);
 			}
 			return state;
 		},
@@ -112,12 +114,13 @@ var SDPToJingle = (function() {
 		},
 		_parseMedia = function(media, params) {
 			media.profile = params[2];
+			media.port = params[1];
 		},
 		_parseAttributes = function(attrs, params) {
 			var key = params[0].split(KEY_DELIMITER);
 			switch(key[0]) {
 				case ATTRIBUTES.CANDIDATE:
-					_parseCandidates(attrs.candidates, key, params);
+					_parseCandidates(attrs['ice-candidates'], key, params);
 					break;
 				case ATTRIBUTES.CRYPTO:
 					_parseCrypto(attrs['crypto'], key, params);
@@ -139,11 +142,18 @@ var SDPToJingle = (function() {
 
 			return attrs;
 		},
+		_parseSessionConnection = function(attrs, params) {
+			attrs['udp-candidates'].push({
+				ip: params[2],
+				port: attrs['port'],
+				generation: 0
+			});
+		},
 		_parseIceParams = function(attrs, key) {
 			attrs[key[0]] = key[1];
 		},
 		_parseCandidates = function(candidates, key, params) {
-			candidates.push({
+			var candidate = {
 				component: params[1],
 				foundation: key[1],
 				protocol: params[2],
@@ -151,12 +161,15 @@ var SDPToJingle = (function() {
 				ip: params[4],
 				port: params[5],
 				type: params[7],
-				name: params[9],
-				network: params[11],
-				ufrag: params[13],
-				pwd: params[15],
-				generation: params[17]
-			});
+				generation: params[9]
+			};
+			/*
+			name: params[9],
+			network: params[11],
+			ufrag: params[13],
+			pwd: params[15],*/
+
+			candidates.push(candidate);
 		},
 		_parseCrypto = function(crypto, key, params) {
 			crypto.push({
@@ -228,6 +241,12 @@ var SDPToJingle = (function() {
 
 			str += "</description>";
 
+			if(media['udp-candidates'].length) {
+				str += "<transport xmlns='" + XMLNS.TRANSPORT.RAW_UDP + "'>";
+				str += _serializeProperties('candidate', media['udp-candidates']);
+				str += '</transport>';
+			}
+
 			str += "<transport xmlns='" + XMLNS.TRANSPORT.ICE_UDP + "'";
 
 			if (media['ice-pwd'] !== "") {
@@ -237,11 +256,11 @@ var SDPToJingle = (function() {
 				str += ' ufrag="' + media['ice-ufrag'] + '"';
 			}
 
-			str += media.candidates.length ? '>' : '/>';
-			if (media.candidates.length) {
-				str += _serializeProperties('candidate', media.candidates);
+			str += media['ice-candidates'].length ? '>' : '/>';
+			if (media['ice-candidates'].length) {
+				str += _serializeProperties('candidate', media['ice-candidates']);
 			}
-			str += media.candidates.length ? '</transport>' : '';
+			str += media['ice-candidates'].length ? '</transport>' : '';
 
 			str += "</content>";
 			return str;
@@ -280,7 +299,8 @@ var SDPToJingle = (function() {
 		_generateEmptyDescription = function() {
 			return {
 				"audio": {
-					candidates: [],
+					"udp-candidates": [],
+					"ice-candidates": [],
 					crypto: [],
 					rtpmap: [],
 					ssrc: {},
@@ -289,7 +309,8 @@ var SDPToJingle = (function() {
 					"ice-pwd": ""
 				},
 				"video": {
-					candidates: [],
+					"udp-candidates": [],
+					"ice-candidates": [],
 					crypto: [],
 					rtpmap: [],
 					ssrc: {},
@@ -303,7 +324,8 @@ var SDPToJingle = (function() {
 		_parseStanza = function(description, stanza) {
 			var child,
 				pwd = stanza.getAttribute('pwd'),
-				ufrag = stanza.getAttribute('ufrag');
+				ufrag = stanza.getAttribute('ufrag'),
+				xmlns = stanza.getAttribute('xmlns');
 			if (pwd) {
 				description['ice-pwd'] = pwd;
 			}
@@ -324,7 +346,12 @@ var SDPToJingle = (function() {
 							}
 							break;
 						case 'candidate':
-							description.candidates.push(_unserializeAttributes(child));
+							if (xmlns == XMLNS.TRANSPORT.RAW_UDP) {
+								description['udp-candidates'].push(_unserializeAttributes(child));
+								description['port'] = child.getAttribute('port');
+							} else if (xmlns == XMLNS.TRANSPORT.ICE_UDP) {
+								description["ice-candidates"].push(_unserializeAttributes(child));
+							}
 							break;
 						case 'streams':
 							for(var c = 0, clen = child.childNodes.length; c < clen; c++) {
@@ -365,22 +392,29 @@ var SDPToJingle = (function() {
 		},
 		_generateMediaSdp = function(media, description) {
 			// TODO: Remove hardcoded values like "1" which is the mediaport placeholder
-			var m = "\r\nm=" + media + " 1 " + description.profile,
+			var m = "\r\nm=" + media + " " + description.port + " " + description.profile,
 				rtpmapStr = "a=mid:" + media + "\r\na=rtcp-mux",
+				rtcpStr = "a=rtcp:" + description.port + " IN IP4 " + description['udp-candidates'][0].ip + "\r\n",
 				cryptoStr = "",
-				candidateStr = "",
+				udpCandidateStr = "",
+				iceCandidateStr = "",
 				ssrcStr = "",
 				iceStr = "";
 
-			if (description['ice-ufrag']) {
-				iceStr += "\r\na=ice-ufrag:" + description['ice-ufrag'];
-			}
-			if (description['ice-pwd']) {
-				iceStr += "\r\na=ice-pwd:" + description['ice-pwd'];
+			for (var i = 0, len = (description['udp-candidates'] ? description['udp-candidates'].length : 0); i < len; i++) {
+				var candidate = description['udp-candidates'][i];
+				udpCandidateStr += "c=IN IP4 " + candidate.ip + "\r\n";
 			}
 
-			for (var i = 0, len = (description.candidates ? description.candidates.length : 0); i < len; i++) {
-				var candidate = description.candidates[i],
+			if (description['ice-ufrag']) {
+				iceStr += "a=ice-ufrag:" + description['ice-ufrag'] + "\r\n";
+			}
+			if (description['ice-pwd']) {
+				iceStr += "a=ice-pwd:" + description['ice-pwd'] + "\r\n";
+			}
+
+			for (var i = 0, len = (description['ice-candidates'] ? description['ice-candidates'].length : 0); i < len; i++) {
+				var candidate = description['ice-candidates'][i],
 					attrs = [
 						candidate.component,
 						candidate.protocol,
@@ -390,18 +424,18 @@ var SDPToJingle = (function() {
 						// TODO: Remove hardcoded values
 						"typ",
 						candidate.type,
-						"name",
+						/*"name",
 						candidate.name,
 						"network_name",
 						candidate.network,
 						"username",
 						candidate.ufrag,
 						"password",
-						candidate.pwd,
+						candidate.pwd,*/
 						"generation",
 						candidate.generation
 					];
-				candidateStr += "a=candidate:" + candidate.foundation
+				iceCandidateStr += "a=candidate:" + candidate.foundation
 					+ " " + attrs.join(" ") + "\r\n";
 			}
 			for (var i = 0, len = (description.crypto ? description.crypto.length : 0); i < len; i++) {
@@ -430,7 +464,7 @@ var SDPToJingle = (function() {
 				}
 			}
 
-			return m + iceStr + "\r\n" + candidateStr + rtpmapStr + ssrcStr;
+			return m + "\r\n" + udpCandidateStr + rtcpStr + iceCandidateStr + iceStr + rtpmapStr + ssrcStr;
 		};
 
 	return {
@@ -459,6 +493,9 @@ var SDPToJingle = (function() {
 			description.sid = jingle.getAttribute('sid');
 
 			for(var y = 0, len = children.length; y < len; y++) {
+				if (!children[y]) {
+					continue;
+				}
 				if (children[y].tagName === 'content') {
 					hasSdpMessage = true;
 					var content = children[y];
