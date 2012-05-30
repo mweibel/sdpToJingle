@@ -46,7 +46,9 @@ var SDPToJingle = (function() {
 			CANDIDATE_USERNAME: "username",
 			CANDIDATE_PASSWORD: "password",
 			CANDIDATE_GENERATION: "generation",
-			RTPMAP: "rtpmap"
+			RTPMAP: "rtpmap",
+			ICE_UFRAG: "ice-ufrag",
+			ICE_PWD: "ice-pwd"
 		},
 		CANDIDATES = {
 			HOST: "host",
@@ -69,12 +71,9 @@ var SDPToJingle = (function() {
 			}
 		},
 		// TODO: Remove hardcoding. This is copied from libjingle webrtcsdp.cc
-		HARDCODED_SDP = "v=0\\r\\no=- 0 0 IN IP4 127.0.0.1\\r\\ns=\\r\\nc=IN IP4 0.0.0.0\\r\\nt=0 0",
+		HARDCODED_SDP_P1 = "v=0\r\no=- ",
+		HARDCODED_SDP_P2 = " 1 IN IP4 127.0.0.1\r\ns=\r\nt=0 0",
 
-		_parseMessageInJSON = function(msg) {
-			// Strip SDP-prefix and parse it as JSON
-			return JSON.parse(msg.substring(SDP_PREFIX_LEN));
-		},
 		_splitSdpMessage = function(msg) {
 			return msg.split(LINE_BREAK);
 		},
@@ -92,6 +91,9 @@ var SDPToJingle = (function() {
 			var keyAndParams = _splitLine(line);
 
 			switch(keyAndParams.key) {
+				case LINE_PREFIXES.ORIGIN:
+					_parseOrigin(description, keyAndParams.params);
+					break;
 				case LINE_PREFIXES.ATTRIBUTES:
 					_parseAttributes(description[state], keyAndParams.params);
 					break;
@@ -104,6 +106,9 @@ var SDPToJingle = (function() {
 		},
 		_parseStateFromMedia = function(params) {
 			return params[0];
+		},
+		_parseOrigin = function(description, params) {
+			description.sid = params[1];
 		},
 		_parseMedia = function(media, params) {
 			media.profile = params[2];
@@ -124,9 +129,18 @@ var SDPToJingle = (function() {
 					// ssrc is only a string, but split ssrc: first
 					_parseSsrc(attrs.ssrc, key, params);
 					break;
+				case ATTRIBUTES.ICE_UFRAG:
+					_parseIceParams(attrs, key);
+					break;
+				case ATTRIBUTES.ICE_PWD:
+					_parseIceParams(attrs, key);
+					break;
 			}
 
 			return attrs;
+		},
+		_parseIceParams = function(attrs, key) {
+			attrs[key[0]] = key[1];
 		},
 		_parseCandidates = function(candidates, key, params) {
 			candidates.push({
@@ -165,12 +179,22 @@ var SDPToJingle = (function() {
 			if (ssrc[key[1]] === undefined) {
 				ssrc[key[1]] = {};
 			}
+			if (nameValue[0] == 'label') {
+				// ugly hack to circumvent the fact that DELIMITER splitting is not the best way to parse SDP.
+				// Otherwise, the label for certain cameras would be incomplete.
+				// TODO: Fix this ugly piece of code
+				var paramLength = params.length;
+				for(var i = 2; i < paramLength; i++) {
+					nameValue[1] += " " + params[i];
+				}
+			}
 			ssrc[key[1]][nameValue[0]] = nameValue[1];
 		},
 		_generateJingleFromDescription = function(description) {
 			return {
 				video: _generateMediaContent("video", description.video),
-				audio: _generateMediaContent("audio", description.audio)
+				audio: _generateMediaContent("audio", description.audio),
+				sid: description.sid
 			};
 		},
 		_generateMediaContent = function(name, media) {
@@ -205,6 +229,14 @@ var SDPToJingle = (function() {
 			str += "</description>";
 
 			str += "<transport xmlns='" + XMLNS.TRANSPORT.ICE_UDP + "'";
+
+			if (media['ice-pwd'] !== "") {
+				str += ' pwd="' + media['ice-pwd'] + '"';
+			}
+			if (media['ice-ufrag'] !== "") {
+				str += ' ufrag="' + media['ice-ufrag'] + '"';
+			}
+
 			str += media.candidates.length ? '>' : '/>';
 			if (media.candidates.length) {
 				str += _serializeProperties('candidate', media.candidates);
@@ -231,7 +263,7 @@ var SDPToJingle = (function() {
 		_getXmlDoc = function(text) {
 			var parser;
 			if (typeof window !== 'undefined' && window.DOMParser) {
-				parser = new DOMParser();
+				parser = new window.DOMParser();
 				return parser.parseFromString(text,"text/xml");
 			} else if(typeof window !== 'undefined' && window.ActiveXObject) { // Internet Explorer
 				parser = new ActiveXObject("Microsoft.XMLDOM");
@@ -252,19 +284,33 @@ var SDPToJingle = (function() {
 					crypto: [],
 					rtpmap: [],
 					ssrc: {},
-					profile: ""
+					profile: "",
+					"ice-ufrag": "",
+					"ice-pwd": ""
 				},
 				"video": {
 					candidates: [],
 					crypto: [],
 					rtpmap: [],
 					ssrc: {},
-					profile: ""
-				}
+					profile: "",
+					"ice-ufrag": "",
+					"ice-pwd": ""
+				},
+				"sid": ""
 			};
 		},
 		_parseStanza = function(description, stanza) {
-			var child;
+			var child,
+				pwd = stanza.getAttribute('pwd'),
+				ufrag = stanza.getAttribute('ufrag');
+			if (pwd) {
+				description['ice-pwd'] = pwd;
+			}
+			if (ufrag) {
+				description['ice-ufrag'] = ufrag;
+			}
+
 			for(var i = 0, len = stanza.childNodes.length; i < len; i++) {
 				if (stanza.childNodes.hasOwnProperty(i)) {
 					child = stanza.childNodes[i];
@@ -303,22 +349,37 @@ var SDPToJingle = (function() {
 			return res;
 		},
 		_generateSdpFromDescription = function(description) {
-			var sdp = HARDCODED_SDP;
+			var baseSdp = HARDCODED_SDP_P1 + description.sid + HARDCODED_SDP_P2,
+				sdp = "",
+				bundleSdp = "\r\na=group:BUNDLE";
+			delete description.sid;
+
+
 			for(var media in description) {
 				if(description.hasOwnProperty(media)) {
 					sdp += _generateMediaSdp(media, description[media]);
 				}
+				bundleSdp += " " + media;
 			}
-			return sdp + "\\r\\n";
+			return baseSdp + bundleSdp + sdp + "\r\n";
 		},
 		_generateMediaSdp = function(media, description) {
 			// TODO: Remove hardcoded values like "1" which is the mediaport placeholder
-			var m = "\\r\\nm=" + media + " 1 " + description.profile,
-				rtpmapStr = "a=mid:" + media + "\\r\\na=rtcp-mux",
+			var m = "\r\nm=" + media + " 1 " + description.profile,
+				rtpmapStr = "a=mid:" + media + "\r\na=rtcp-mux",
 				cryptoStr = "",
 				candidateStr = "",
-				ssrcStr = "";
-			for (var i = 0, len = description.candidates.length; i < len; i++) {
+				ssrcStr = "",
+				iceStr = "";
+
+			if (description['ice-ufrag']) {
+				iceStr += "\r\na=ice-ufrag:" + description['ice-ufrag'];
+			}
+			if (description['ice-pwd']) {
+				iceStr += "\r\na=ice-pwd:" + description['ice-pwd'];
+			}
+
+			for (var i = 0, len = (description.candidates ? description.candidates.length : 0); i < len; i++) {
 				var candidate = description.candidates[i],
 					attrs = [
 						candidate.component,
@@ -341,27 +402,27 @@ var SDPToJingle = (function() {
 						candidate.generation
 					];
 				candidateStr += "a=candidate:" + candidate.foundation
-					+ " " + attrs.join(" ") + "\\r\\n";
+					+ " " + attrs.join(" ") + "\r\n";
 			}
-			for (var i = 0, len = description.crypto.length; i < len; i++) {
+			for (var i = 0, len = (description.crypto ? description.crypto.length : 0); i < len; i++) {
 				var crypto = description.crypto[i];
-				cryptoStr += "\\r\\na=crypto:" + crypto.tag + " " + crypto['crypto-suite'] +
+				cryptoStr += "\r\na=crypto:" + crypto.tag + " " + crypto['crypto-suite'] +
 					" " + crypto['key-params'] + " ";
 				if(crypto['session-params'].length) {
 					cryptoStr += crypto['session-params'];
 				}
 			}
 			rtpmapStr += cryptoStr;
-			for (var i = 0, len = description.rtpmap.length; i < len; i++) {
+			for (var i = 0, len = (description.rtpmap ? description.rtpmap.length : 0); i < len; i++) {
 				var type = description.rtpmap[i];
 				m += " " + type.id;
-				rtpmapStr += "\\r\\na=rtpmap:" + type.id + " " + type.name + "/" + type.clockrate;
+				rtpmapStr += "\r\na=rtpmap:" + type.id + " " + type.name + "/" + type.clockrate;
 			}
 			for (var key in description.ssrc) {
 				if (description.ssrc.hasOwnProperty(key)) {
 					var ssrc = description.ssrc[key];
 					for (var subkey in ssrc) {
-						ssrcStr += "\\r\\na=ssrc:" + key;
+						ssrcStr += "\r\na=ssrc:" + key;
 						if (ssrc.hasOwnProperty(subkey)) {
 							ssrcStr += " " + subkey + ":" + ssrc[subkey];
 						}
@@ -369,22 +430,14 @@ var SDPToJingle = (function() {
 				}
 			}
 
-			return m + "\\r\\n" + candidateStr + rtpmapStr + ssrcStr;
+			return m + iceStr + "\r\n" + candidateStr + rtpmapStr + ssrcStr;
 		};
 
 	return {
-		createJingleStanza: function(sdpMsg) {
-			sdpMsg = _parseMessageInJSON(sdpMsg);
-			if (!sdpMsg.sdp) {
-				throw "Error: Invalid SDP message given";
-			}
-
+		createJingleStanza: function(sdp) {
 			var description = _generateEmptyDescription(),
 				state = null,
-				sdp = _splitSdpMessage(sdpMsg.sdp),
-				sessionId = sdpMsg.offererSessionId,
-				seq = sdpMsg.seq,
-				tieBreaker = sdpMsg.tieBreaker;
+				sdp = _splitSdpMessage(sdp);
 			for(var i = 0, len = sdp.length; i < len; i++) {
 				state = _parseLine(description, state, sdp[i]);
 			}
@@ -392,16 +445,19 @@ var SDPToJingle = (function() {
 		},
 		parseJingleStanza: function(stanza) {
 			var doc = _getXmlDoc(stanza),
-				children = doc.childNodes.length && doc.childNodes[0].childNodes,
+				jingle = doc.childNodes.length ? doc.childNodes[0] : undefined,
+				children = jingle ? jingle.childNodes : undefined,
 				child,
 				media = null,
 				description = _generateEmptyDescription(),
 				hasSdpMessage = false;
-				
+
 			if (!children) {
 				throw "Error: Invalid Stanza given";
 			}
-			
+
+			description.sid = jingle.getAttribute('sid');
+
 			for(var y = 0, len = children.length; y < len; y++) {
 				if (children[y].tagName === 'content') {
 					hasSdpMessage = true;
