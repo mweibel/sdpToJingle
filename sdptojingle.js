@@ -32,7 +32,7 @@ var SDPToJingle = (function() {
 			GROUP: "group",
 			MID: "mid",
 			MID_AUDIO: "mid:audio",
-			MID_VIDEO: "mid:audio",
+			MID_VIDEO: "mid:video",
 			RTCP_MUX: "rtcp-mux",
 			SSRC: "ssrc",
 			CNAME: "cname",
