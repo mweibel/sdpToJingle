@@ -1,3 +1,7 @@
+Deprecation Notice
+=================
+I didn't have time to improve the code for this repository since a while. Please take a look [at the up2date strophe.jingle repository](https://github.com/ESTOS/strophe.jingle).
+
 SDP To Jingle
 =============
 
